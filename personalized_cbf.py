@@ -1,7 +1,9 @@
 """
     AUTHORS:
         Adriel Isaiah V. Amoguis
-        Gian Joseph B. Madrid
+        Elizabeth Celestino
+        Zyreel Ilagan
+        Gian Joseph Madrid
 
     Personalied Content-Based Filtering (CBF) on Microsoft MIND Dataset
     TF-IDF Vectorization and Categorical Approach
@@ -242,6 +244,7 @@ class PersonalizedCBF:
             print("Building user profiles on train set...")
             train_user_profiles = self._build_user_profiles(train_features)
             print("Evaluating on test set...")
+            
             
 
 def main(args):
