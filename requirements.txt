@@ -4,5 +4,3 @@ pandas
 numpy
 scipy
 sklearn
-recmetrics
-ml_metrics
