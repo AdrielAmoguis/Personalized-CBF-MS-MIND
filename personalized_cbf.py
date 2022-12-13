@@ -197,13 +197,23 @@ class PersonalizedCBF:
     def _get_article_entry(self, article_id):
         return self.mind_news_df[self.mind_news_df['news_id'] == article_id]
 
-    def recommend(self, user_id, top_n=10):
+    def recommend(self, user_id, top_n=10, remove_read=True):
         user_profile = self.build_user_profile(user_id)
         scores = user_profile.dot(self.news_feature_vectors.T).toarray().ravel()
         top_news = np.array(self.article_ids)[np.argsort(-scores)]
 
-        articles = [self._get_article_entry(a_id) for a_id in top_news[:top_n]]
+        # Remove already read news articles
+        if remove_read:
+            user_behaviors = self.mind_behaviors_df[self.mind_behaviors_df['user_id'] == user_id]
+            for _, row in user_behaviors.iterrows():
+                history = row['history'].split()
+                for news_id in history:
+                    try:
+                        top_news = np.delete(top_news, np.where(top_news == news_id))
+                    except ValueError:
+                        pass
 
+        articles = [self._get_article_entry(a_id) for a_id in top_news[:top_n]]
         return top_news, articles
 
     def evaluate(self, n, percentage=0.2):
@@ -226,25 +236,40 @@ class PersonalizedCBF:
 
         print("\nRecall@{}: {:.4f}".format(percentage, hits / self.mind_behaviors_df[:n_eval].shape[0]))
 
-    def k_fold_cross_validation(self, k):
-        print("Performing k-fold cross validation...")
-        n = int(self.mind_behaviors_df.shape[0] / k)
-        for i in range(k):
-            print("Fold {} / {}".format(i + 1, k))
-            
-            eval_news_train_df = self.mind_news_df[i*n:(i+1)*n]
-            eval_news_test_df = self.mind_news_df[~self.mind_news_df.index.isin(self.eval_news_train_df.index)]
+    def validate_and_evaluate(self, k, percentage=0.2):
+        print("Evaluating @K =", k)
+        
+        n = int(self.mind_behaviors_df.shape[0] * percentage)
 
-            print("Preprocessing...")
-            self._preprocess(eval_news_train_df)
-            self._preprocess(eval_news_test_df)
-            print("Building item profiles...")
-            train_features = self._build_item_profiles(eval_news_train_df)
-            test_features = self._build_item_profiles(eval_news_test_df)
-            print("Building user profiles on train set...")
-            train_user_profiles = self._build_user_profiles(train_features)
-            print("Evaluating on test set...")
+        # For each user, get the top k recommendations
+        # and check if the clicked news is in the top k
+        sum_precision = 0
+        for i, row in self.mind_behaviors_df[:n].iterrows():
+            print("\rEvaluating: {} / {} | {:.2f}%".format(i, self.mind_behaviors_df[:n].shape[0], i / self.mind_behaviors_df[:n].shape[0] * 100), end="")
+            user_id = row['user_id']
+            clicked_news_ids = row['history'].split()
             
+            # Ensure that the clicked_news_ids are in the article_ids
+            clicked_news_ids = [news_id for news_id in clicked_news_ids if news_id in self.article_ids]
+
+            # Get user impressions
+            impressions = row['impressions'].split()
+            impressions = [news_id.split("-")[0] for news_id in impressions if news_id.split("-")[1] == "1"]
+            impressions = [news_id for news_id in impressions if news_id in self.article_ids]
+
+            # Read Articles
+            read_articles = clicked_news_ids + impressions
+
+            top_news, _ = self.recommend(user_id, top_n=k, remove_read=False)
+            hits = 0
+            for i in range(k):
+                if top_news[i] in read_articles:
+                    hits += 1
+            sum_precision += hits / k
+
+        mean_average_precision = sum_precision / self.mind_behaviors_df.shape[0]
+        print("\nMAP@{}: {:.4f}".format(k, mean_average_precision))
+        return mean_average_precision
             
 
 def main(args):
@@ -254,6 +279,9 @@ def main(args):
     LOAD_FEATURES = args.load_features
     OUTPUT_FILE = args.output
     EVAL = args.evaluate
+    TEST = args.test
+    TEST_K = args.test_k
+    TEST_PERCENTAGE = args.test_percentage
 
     news_df = pd.read_csv(os.path.join(DATASET_ROOT, "news.tsv"), delimiter="\t", names=["news_id", "category", "subcategory", "title", "abstract", "url", "title_entities", "abstract_entities"])
     behaviors_df = pd.read_csv(os.path.join(DATASET_ROOT, "behaviors.tsv"), delimiter="\t", names=["impression_id", "user_id", "time", "history", "impressions"])
@@ -274,6 +302,10 @@ def main(args):
 
     if EVAL:
         pCBF.evaluate(10)
+        return
+
+    if TEST:
+        pCBF.validate_and_evaluate(TEST_K, percentage=TEST_PERCENTAGE)
         return
 
     while True:
@@ -297,16 +329,6 @@ def main(args):
             print("Abstract:", article['abstract'].values[0])
             print()
 
-    # # Predict
-    # rand_user_id = np.random.choice(pCBF.user_ids)
-    # _, articles = pCBF.recommend(rand_user_id)
-    # print("Recommended articles:\n")
-
-    # for article in articles:
-    #     print("Title:", article['title'].values[0])
-    #     print("Abstract:", article['abstract'].values[0])
-    #     print()
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-d','--data_dir', type=str, help='Root directory of the MS MIND Dataset', default="MINDsmall_train")
@@ -315,5 +337,8 @@ if __name__ == '__main__':
     parser.add_argument('-o','--output', type=str, help='Output filename of article feature vectors (.npz)', default="article_features.npz")
     parser.add_argument('-v','--verbose', action="store_true", help='Verbose mode', default=False)
     parser.add_argument('-e','--evaluate', action="store_true", help='Evaluate model', default=False)
+    parser.add_argument('-t','--test', action="store_true", help='Test model', default=False)
+    parser.add_argument('-k','--test-k', type=int, help='Number of recommendations to consider for calculating MAP@K.', default=10)
+    parser.add_argument('-p','--test-percentage', type=float, help='Percentage of users to use for testing.', default=0.2)
     args = parser.parse_args()
     main(args)
