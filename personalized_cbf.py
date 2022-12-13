@@ -270,9 +270,8 @@ class PersonalizedCBF:
             # Calculate DCG@k
             dcg = 0
             for i in range(k):
-                if top_news[i] in clicked_news_ids:
+                if top_news[i] in read_articles:
                     dcg += 1 / np.log2(i + 2)
-        
             
             dcgk += dcg
             sum_precision += hits / k
