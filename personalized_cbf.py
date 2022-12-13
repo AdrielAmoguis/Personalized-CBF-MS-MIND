@@ -267,7 +267,7 @@ class PersonalizedCBF:
                     hits += 1
             sum_precision += hits / k
 
-        mean_average_precision = sum_precision / self.mind_behaviors_df.shape[0]
+        mean_average_precision = sum_precision / self.mind_behaviors_df[:n].shape[0]
         print("\nMAP@{}: {:.4f}".format(k, mean_average_precision))
         return mean_average_precision
             
