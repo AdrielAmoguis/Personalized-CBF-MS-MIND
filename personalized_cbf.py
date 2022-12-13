@@ -244,8 +244,9 @@ class PersonalizedCBF:
         # For each user, get the top k recommendations
         # and check if the clicked news is in the top k
         sum_precision = 0
+        dcgk = 0
         for i, row in self.mind_behaviors_df[:n].iterrows():
-            print("\rEvaluating: {} / {} | {:.2f}%".format(i, self.mind_behaviors_df[:n].shape[0], i / self.mind_behaviors_df[:n].shape[0] * 100), end="")
+            print("\rEvaluating: {} / {} | {:.2f}% | MAP@{}: {:.2f} | DCG@{}: {:.2f}".format(i, self.mind_behaviors_df[:n].shape[0], i / self.mind_behaviors_df[:n].shape[0] * 100, k, sum_precision / self.mind_behaviors_df[:n].shape[0], k, dcgk / self.mind_behaviors_df[:n].shape[0]), end="")
             user_id = row['user_id']
             clicked_news_ids = row['history'].split()
             
@@ -265,6 +266,15 @@ class PersonalizedCBF:
             for i in range(k):
                 if top_news[i] in read_articles:
                     hits += 1
+
+            # Calculate DCG@k
+            dcg = 0
+            for i in range(k):
+                if top_news[i] in clicked_news_ids:
+                    dcg += 1 / np.log2(i + 2)
+        
+            
+            dcgk += dcg
             sum_precision += hits / k
 
         mean_average_precision = sum_precision / self.mind_behaviors_df[:n].shape[0]
